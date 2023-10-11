@@ -1,0 +1,4 @@
+[ZoneTransfer]
+ZoneId=3
+ReferrerUrl=https://github.com/raspberrypi/firmware/tree/master/boot
+HostUrl=https://github.com/raspberrypi/firmware/blob/master/boot/bootcode.bin
