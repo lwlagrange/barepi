@@ -1,6 +1,7 @@
 {
   "files.associations": {
     "io.h": "c",
-    "tm.h": "c"
+    "tm.h": "c",
+    "ut.h": "c"
   }
 }

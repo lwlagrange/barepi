@@ -1,110 +1,267 @@
-// GPIO
+#include "io.h"
+#include "ut.h"
+#include "tm.h"
+// -------------- GPIO --------------
 
-enum
+// Base address for peripherals
+#define PERIPHERAL_BASE 0xFE000000
+// GPIO register offsets
+#define GPFSEL0 (PERIPHERAL_BASE + 0x200000)   // GPIO Function Select
+#define GPSET0 (PERIPHERAL_BASE + 0x20001C)    // GPIO Pin Output Set
+#define GPCLR0 (PERIPHERAL_BASE + 0x200028)    // GPIO Pin Output Clear
+#define GPSET1 (PERIPHERAL_BASE + 0x200020)    // GPIO Pin Output Set 1
+#define GPCLR1 (PERIPHERAL_BASE + 0x20002C)    // GPIO Pin Output Clear 1
+#define GPPUPPDN0 (PERIPHERAL_BASE + 0x2000E4) // GPIO Pin Pull-up/down Enable Enable for pins 1-15
+#define GPPUPPDN1 (PERIPHERAL_BASE + 0x2000E8) // GPIO Pin Pull-up/down Enable for pins 16-31
+#define GPIO_MAX_PIN 53                        // Maximum GPIO Pin number
+
+// Write a value to a memory-mapped IO address
+void writeMMIO(unsigned long address, unsigned int value)
 {
-  PERIPHERAL_BASE = 0xFE000000,
-  GPFSEL0 = PERIPHERAL_BASE + 0x200000,
-  GPSET0 = PERIPHERAL_BASE + 0x20001C,
-  GPCLR0 = PERIPHERAL_BASE + 0x200028,
-  GPPUPPDN0 = PERIPHERAL_BASE + 0x2000E4
-};
+  *(volatile unsigned int *)address = value;
+}
 
-enum
+// Read a value from a memory-mapped IO address
+unsigned int readMMIO(unsigned long address)
 {
-  GPIO_MAX_PIN = 53,
-  GPIO_FUNCTION_ALT5 = 2,
-};
+  return *(volatile unsigned int *)address;
+}
 
-enum
+// Configure GPIO pins: set functions, pull-ups, etc.
+unsigned int configGPIO(unsigned int pinNumber, unsigned int pinFunc, unsigned int base, unsigned int fieldSize, unsigned int maxPin)
 {
-  Pull_None = 0,
-};
+  unsigned int fieldMask = (1 << fieldSize) - 1;
 
-void mmio_write(long reg, unsigned int val) { *(volatile unsigned int *)reg = val; }
-unsigned int mmio_read(long reg) { return *(volatile unsigned int *)reg; }
-
-unsigned int gpio_call(unsigned int pin_number, unsigned int value, unsigned int base, unsigned int field_size, unsigned int field_max)
-{
-  unsigned int field_mask = (1 << field_size) - 1;
-
-  if (pin_number > field_max)
+  if (pinNumber > maxPin)
     return 0;
-  if (value > field_mask)
+  if (pinFunc > fieldMask)
     return 0;
 
-  unsigned int num_fields = 32 / field_size;
-  unsigned int reg = base + ((pin_number / num_fields) * 4);
-  unsigned int shift = (pin_number % num_fields) * field_size;
+  unsigned int numFields = 32 / fieldSize;
+  unsigned int reg = base + ((pinNumber / numFields) * 4);
+  unsigned int shift = (pinNumber % numFields) * fieldSize;
 
-  unsigned int curval = mmio_read(reg);
-  curval &= ~(field_mask << shift);
-  curval |= value << shift;
-  mmio_write(reg, curval);
+  unsigned int currVal = readMMIO(reg);
+  currVal &= ~(fieldMask << shift);
+  currVal |= pinFunc << shift;
+  writeMMIO(reg, currVal);
 
   return 1;
 }
 
-unsigned int gpio_set(unsigned int pin_number, unsigned int value) { return gpio_call(pin_number, value, GPSET0, 1, GPIO_MAX_PIN); }
-unsigned int gpio_clear(unsigned int pin_number, unsigned int value) { return gpio_call(pin_number, value, GPCLR0, 1, GPIO_MAX_PIN); }
-unsigned int gpio_pull(unsigned int pin_number, unsigned int value) { return gpio_call(pin_number, value, GPPUPPDN0, 2, GPIO_MAX_PIN); }
-unsigned int gpio_function(unsigned int pin_number, unsigned int value) { return gpio_call(pin_number, value, GPFSEL0, 3, GPIO_MAX_PIN); }
-
-void gpio_useAsAlt5(unsigned int pin_number)
+// Set a GPIO pin's function (e.g., input, output, alt function)
+void setGPIOFunction(unsigned int pinNumber, int functionType)
 {
-  gpio_pull(pin_number, Pull_None);
-  gpio_function(pin_number, GPIO_FUNCTION_ALT5);
+  configGPIO(pinNumber, functionType, GPFSEL0, 3, GPIO_MAX_PIN);
 }
 
-// UART
-
-enum
+// Configure the pull up/down setting of a GPIO pin
+void setGPIOPull(unsigned int pinNumber, int pullType)
 {
-  AUX_BASE = PERIPHERAL_BASE + 0x215000,
-  AUX_ENABLES = AUX_BASE + 4,
-  AUX_MU_IO_REG = AUX_BASE + 64,
-  AUX_MU_IER_REG = AUX_BASE + 68,
-  AUX_MU_IIR_REG = AUX_BASE + 72,
-  AUX_MU_LCR_REG = AUX_BASE + 76,
-  AUX_MU_MCR_REG = AUX_BASE + 80,
-  AUX_MU_LSR_REG = AUX_BASE + 84,
-  AUX_MU_CNTL_REG = AUX_BASE + 96,
-  AUX_MU_BAUD_REG = AUX_BASE + 104,
-  AUX_UART_CLOCK = 500000000,
-  UART_MAX_QUEUE = 16 * 1024
-};
+  unsigned int reg;
 
+  // Check for GPIO pin number to decide which register to use
+  if (pinNumber < 16)
+  {
+    reg = GPPUPPDN0;
+  }
+  else if (pinNumber < 32)
+  {
+    reg = GPPUPPDN1;
+    pinNumber -= 16;
+  }
+  else
+  {
+    return; // Unsupported pin number for pull configuration
+  }
+
+  configGPIO(pinNumber, pullType, reg, 2, GPIO_MAX_PIN);
+}
+
+// Function to read the GPIO value
+int readGPIOValue(unsigned int pinNumber)
+{
+  unsigned int reg = (pinNumber < 32) ? (PERIPHERAL_BASE + 0x200034) : (PERIPHERAL_BASE + 0x200038); // GPLEV0 or GPLEV1
+  return (readMMIO(reg) & (1 << pinNumber)) ? 1 : 0;
+}
+
+void setGPIOHigh(unsigned int pinNumber)
+{
+  if (pinNumber < 32)
+  {
+    writeMMIO(GPSET0, 1 << pinNumber);
+  }
+  else if (pinNumber <= GPIO_MAX_PIN)
+  { // <= because the maximum pin number is inclusive
+    writeMMIO(GPSET1, 1 << (pinNumber - 32));
+  }
+}
+
+void setGPIOLow(unsigned int pinNumber)
+{
+  if (pinNumber < 32)
+  {
+    writeMMIO(GPCLR0, 1 << pinNumber);
+  }
+  else if (pinNumber <= GPIO_MAX_PIN)
+  { // <= because the maximum pin number is inclusive
+    writeMMIO(GPCLR1, 1 << (pinNumber - 32));
+  }
+}
+
+void toggleGPIO(unsigned int pinNumber)
+{
+  int currentState = readGPIOValue(pinNumber);
+  currentState ? setGPIOLow(pinNumber) : setGPIOHigh(pinNumber);
+}
+
+// Configure a GPIO pin to use its "Alternate 5" function
+void useGPIOAsAlt5(unsigned int pinNumber)
+{
+  setGPIOPull(pinNumber, GPIO_PULL_NONE);
+  setGPIOFunction(pinNumber, GPIO_FUNC_ALT5);
+}
+
+// Function to test the GPIO ports configures the GPIO pins as outputs and then cylces
+char *testGPIO(void)
+{
+  static char statusChart[18][50]; // Static so memory persists outside function
+
+  int gpioPins[] = {4, 27, 21, 13, 26, 23, 22, 12, 20, 19, 24, 25, 5, 6, 16, 17, 18};
+  int pinCount = sizeof(gpioPins) / sizeof(gpioPins[0]);
+
+  for (int i = 0; i < pinCount; i++)
+  {
+    char pinNumChar[4];
+    itoa(gpioPins[i], pinNumChar);
+
+    setGPIOPull(gpioPins[i], GPIO_PULL_LOW);
+    busyDelay(1000000);
+    setGPIOFunction(gpioPins[i], GPIO_FUNC_OUTPUT);
+    busyDelay(1000000);
+    setGPIOLow(gpioPins[i]);
+    busyDelay(1000000);
+
+    setGPIOHigh(gpioPins[i]);
+    busyDelay(5000000);
+
+    if (readGPIOValue(gpioPins[i]) == 1)
+    {
+      stringcpy(statusChart[i], "Write Success / ", sizeof(statusChart[i]));
+    }
+    else
+    {
+      stringcpy(statusChart[i], "Write Fail / ", sizeof(statusChart[i]));
+    }
+
+    setGPIOLow(gpioPins[i]);
+    busyDelay(5000000);
+
+    if (readGPIOValue(gpioPins[i]) == 0)
+    {
+      stringcat(statusChart[i], "Read Success", sizeof(statusChart[i]) - stringlen(statusChart[i]));
+    }
+    else
+    {
+      stringcat(statusChart[i], "Read Fail", sizeof(statusChart[i]) - stringlen(statusChart[i]));
+    }
+  }
+
+  // Construct the chart as a string
+  static char result[1000];
+  stringcpy(result, "\nGPIO Testing Results:\nPin  | Status\n-----|-------------------------\n", sizeof(result));
+
+  for (int i = 0; i < pinCount; i++)
+  {
+    char pinNumChar[4];
+    itoa(gpioPins[i], pinNumChar);
+
+    stringcat(result, pinNumChar, sizeof(result) - stringlen(result));
+    stringcat(result, "  | ", sizeof(result) - stringlen(result));
+    stringcat(result, statusChart[i], sizeof(result) - stringlen(result));
+    stringcat(result, "\n", sizeof(result) - stringlen(result));
+  }
+  stringcat(result, "GPIO Testing Complete!", sizeof(result) - stringlen(result));
+
+  return result;
+}
+
+// -------------- UART --------------
+
+// Base address for AUX (Auxiliary) peripherals
+#define AUX_BASE (PERIPHERAL_BASE + 0x215000)
+// UART register offsets
+#define AUX_ENABLES (AUX_BASE + 4)       // Control register for auxiliary peripherals
+#define AUX_MU_IO_REG (AUX_BASE + 64)    // Mini UART I/O Data Register
+#define AUX_MU_IER_REG (AUX_BASE + 68)   // Mini UART Interrupt Enable Register
+#define AUX_MU_IIR_REG (AUX_BASE + 72)   // Mini UART Interrupt Identify Register
+#define AUX_MU_LCR_REG (AUX_BASE + 76)   // Mini UART Line Control Register
+#define AUX_MU_MCR_REG (AUX_BASE + 80)   // Mini UART Modem Control Register
+#define AUX_MU_LSR_REG (AUX_BASE + 84)   // Mini UART Line Status Register
+#define AUX_MU_CNTL_REG (AUX_BASE + 96)  // Mini UART Control Register
+#define AUX_MU_BAUD_REG (AUX_BASE + 104) // Mini UART Baud Rate Register
+#define AUX_UART_CLOCK 500000000         // Clock frequency for the UART
+#define UART_MAX_QUEUE (16 * 1024)       // Maximum queue size for UART data buffering
 #define AUX_MU_BAUD(baud) ((AUX_UART_CLOCK / (baud * 8)) - 1)
 
-void uart_init()
+void initUART()
 {
-  mmio_write(AUX_ENABLES, 1); // enable UART1
-  mmio_write(AUX_MU_IER_REG, 0);
-  mmio_write(AUX_MU_CNTL_REG, 0);
-  mmio_write(AUX_MU_LCR_REG, 3); // 8 bits
-  mmio_write(AUX_MU_MCR_REG, 0);
-  mmio_write(AUX_MU_IER_REG, 0);
-  mmio_write(AUX_MU_IIR_REG, 0xC6); // disable interrupts
-  mmio_write(AUX_MU_BAUD_REG, AUX_MU_BAUD(115200));
-  gpio_useAsAlt5(14);
-  gpio_useAsAlt5(15);
-  mmio_write(AUX_MU_CNTL_REG, 3); // enable RX/TX
+  writeMMIO(AUX_ENABLES, 1); // enable UART1
+  writeMMIO(AUX_MU_IER_REG, 0);
+  writeMMIO(AUX_MU_CNTL_REG, 0);
+  writeMMIO(AUX_MU_LCR_REG, 3); // 8 bits
+  writeMMIO(AUX_MU_MCR_REG, 0);
+  writeMMIO(AUX_MU_IER_REG, 0);
+  writeMMIO(AUX_MU_IIR_REG, 0xC6); // disable interrupts
+  writeMMIO(AUX_MU_BAUD_REG, AUX_MU_BAUD(115200));
+  useGPIOAsAlt5(14);
+  useGPIOAsAlt5(15);
+  writeMMIO(AUX_MU_CNTL_REG, 3); // enable RX/TX
 }
 
-unsigned int uart_isWriteByteReady() { return mmio_read(AUX_MU_LSR_REG) & 0x20; }
-
-void uart_writeByteBlockingActual(unsigned char ch)
+// Check if UART is ready to send a byte
+unsigned int isUARTReadyToWrite()
 {
-  while (!uart_isWriteByteReady())
-    ;
-  mmio_write(AUX_MU_IO_REG, (unsigned int)ch);
+  return readMMIO(AUX_MU_LSR_REG) & 0x20;
 }
 
-void uart_writeText(char *buffer)
+// Send a single byte via UART
+void sendUARTByte(unsigned char byte)
 {
-  while (*buffer)
+  while (!isUARTReadyToWrite())
+    ; // Wait until UART is ready to write
+  writeMMIO(AUX_MU_IO_REG, (unsigned int)byte);
+}
+
+// Send a string via UART
+void sendUARTString(char *str)
+{
+  while (*str)
   {
-    if (*buffer == '\n')
-      uart_writeByteBlockingActual('\r');
-    uart_writeByteBlockingActual(*buffer++);
+    if (*str == '\n')
+      sendUARTByte('\r'); // Sending '\r' before '\n' for newlines
+    sendUARTByte(*str);
+    str++;
   }
+}
+
+void initUARTMessage(void)
+{
+  sendUARTString("BarePI 1.0 - Bare Metal OS For Raspberry Pi\n"); // welcome message
+  sendUARTString(" Bare Metal Program Running!");
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString(".");
+  busyDelay(1000000);
+  sendUARTString("\033[2J\033[H"); // ANSI escape sequence that clears uart and moves cursor to top left
 }
