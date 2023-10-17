@@ -1,6 +1,9 @@
 #ifndef IO_H
 #define IO_H
 
+// Base address for peripherals
+#define PERIPHERAL_BASE 0xFE000000
+
 // Enumerations and function prototypes for GPIO and UART operations
 // Define enumeration for GPIO function types
 typedef enum
@@ -20,6 +23,12 @@ typedef enum
 
 // Function to initialize the UART (Universal Asynchronous Receiver-Transmitter)
 void initUART();
+
+// write value to a memory-mapped address
+void writeMMIO(unsigned long address, unsigned int value);
+
+// Read a value from a memory-mapped IO address
+unsigned int readMMIO(unsigned long address);
 
 // Function to send a string through UART
 // buffer: Null-terminated string to be sent

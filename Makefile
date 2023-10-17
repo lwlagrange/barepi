@@ -1,7 +1,8 @@
 CFILES = $(wildcard *.c)
 OFILES = $(CFILES:.c=.o)
 GCCFLAGS = -Wall -O2 -ffreestanding -nostdinc -nostdlib -nostartfiles
-GCCPATH = /usr/aarch64-none-elf/bin
+GCCPATH = /opt/aarch64-none-elf/bin
+
 
 all: clean kernel8.img
 

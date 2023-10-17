@@ -1,6 +1,6 @@
-#include "io.h"
-#include "tm.h"
-#include "ut.h"
+#include "io.h" //gpio init and control
+#include "tm.h" //timer functions
+#include "ut.h" //utilities for data manipulation
 
 int main(void)
 {

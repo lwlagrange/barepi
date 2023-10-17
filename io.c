@@ -2,9 +2,6 @@
 #include "ut.h"
 #include "tm.h"
 // -------------- GPIO --------------
-
-// Base address for peripherals
-#define PERIPHERAL_BASE 0xFE000000
 // GPIO register offsets
 #define GPFSEL0 (PERIPHERAL_BASE + 0x200000)   // GPIO Function Select
 #define GPSET0 (PERIPHERAL_BASE + 0x20001C)    // GPIO Pin Output Set
@@ -263,5 +260,5 @@ void initUARTMessage(void)
   busyDelay(1000000);
   sendUARTString(".");
   busyDelay(1000000);
-  sendUARTString("\033[2J\033[H"); // ANSI escape sequence that clears uart and moves cursor to top left
+  // sendUARTString("\033[2J\033[H"); // ANSI escape sequence that clears uart and moves cursor to top left
 }
