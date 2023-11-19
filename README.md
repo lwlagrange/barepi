@@ -25,7 +25,7 @@ Install:
 6) From the sd card with the raspbian install and repplace the ```kernel8.img``` file in the sd card with the one you created in barepi project folder and eject the sd card.
 7) Install the sd card in a raspberry pi 4 and connect the TX on the UART adapter to RX pin on the raspberry pi and the RX on the UART to the TX on the pi
 8) Open putty and open a serial connection to your pi using a baud rate of 115200 look in the device manager to find which com port your device is on mine was ```COM5```
-9) Power up the pi and what the welcome message on the serial port
+9) Power up the pi and watch for the welcome message on the serial port
 10) You can start your development of your bare metal c program by making changes to the ```kernel.c``` in your ide and re-running ```make``` and replacing the ```kernel8.img``` in the sd card
 
 
